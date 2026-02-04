@@ -18,19 +18,30 @@ public class HoneyPotController {
     }
 
     @PostMapping("/honeypot")
-    public ResponseEntity<ApiResponse> handleHoneypot(
-            @RequestHeader(value = "x-api-key", required = false) String apiKey,
-            @RequestBody InputRequest request) {
-        
-        if (!API_KEY.equals(apiKey)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
+public ResponseEntity<Map<String, Object>> handleHoneypot(
+        @RequestHeader(value = "x-api-key", required = false) String apiKey,
+        @RequestBody Map<String, Object> request) {
 
-        if (request.getSessionId() == null || request.getMessage() == null) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        ApiResponse response = honeyPotService.processRequest(request);
-        return ResponseEntity.ok(response);
+    if (!API_KEY.equals(apiKey)) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
+
+    if (!request.containsKey("sessionId") || !request.containsKey("message")) {
+        return ResponseEntity.badRequest().build();
+    }
+
+    Map<String, Object> message =
+            (Map<String, Object>) request.get("message");
+
+    String reply =
+            "Oh no! Blocked? Please don't block me sir. I have my pension in this account. Please help me fix it immediately.";
+
+    return ResponseEntity.ok(
+            Map.of(
+                "status", "success",
+                "reply", reply
+            )
+    );
+}
+
 }
