@@ -1,9 +1,15 @@
-import com.guvi.honeypot.model.ApiResponse;
+package com.guvi.honeypot.controller;
+
 import com.guvi.honeypot.model.InputRequest;
+import com.guvi.honeypot.model.Message;
 import com.guvi.honeypot.service.HoneyPotService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 public class HoneyPotController {
@@ -16,35 +22,53 @@ public class HoneyPotController {
     }
 
     @PostMapping("/honeypot")
-    public ResponseEntity<ApiResponse> handleHoneypot(
+    public ResponseEntity<Map<String, Object>> handleHoneypot(
             @RequestHeader(value = "x-api-key", required = false) String apiKey,
-            @RequestBody(required = false) InputRequest request) { // required=false to handle empty body gracefully
-        
-        // 1. Security Check
+            @RequestBody(required = false) Map<String, Object> requestBody) {
+
+        // 1. Strict Authentication
         if (!API_KEY.equals(apiKey)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // 2. Validate Request Body
-        if (request == null) {
-            System.out.println("Error: Request body is null");
-            return ResponseEntity.badRequest().build();
+        // 2. Permissive Input Handling (No 400s)
+        if (requestBody == null) {
+            requestBody = new HashMap<>();
         }
 
-        // Allow missing history/metadata (initialize if null in service or here)
-        if (request.getSessionId() == null || request.getSessionId().isEmpty()) {
-             System.out.println("Error: sessionId is missing");
-             return ResponseEntity.badRequest().build();
-        }
+        // 3. Manual Mapping to keep Service Logic (Best Effort)
+        InputRequest serviceRequest = new InputRequest();
         
-        if (request.getMessage() == null || request.getMessage().getText() == null) {
-             System.out.println("Error: message or message text is missing");
-             return ResponseEntity.badRequest().build();
-        }
+        // Session
+        Object sessionIdObj = requestBody.get("sessionId");
+        serviceRequest.setSessionId(sessionIdObj != null ? sessionIdObj.toString() : "unknown-session-" + System.currentTimeMillis());
 
-        // 3. Process Request
-        ApiResponse response = honeyPotService.processRequest(request);
+        // Message
+        Message message = new Message();
+        Object msgObj = requestBody.get("message");
+        if (msgObj instanceof Map) {
+            Map<?, ?> msgMap = (Map<?, ?>) msgObj;
+            message.setText(msgMap.get("text") != null ? msgMap.get("text").toString() : "");
+            message.setSender(msgMap.get("sender") != null ? msgMap.get("sender").toString() : "unknown");
+        } else {
+            // Fallback if message is just a string or missing
+            message.setText("Hello"); 
+            message.setSender("unknown");
+        }
+        serviceRequest.setMessage(message);
+        serviceRequest.setConversationHistory(Collections.emptyList());
+        serviceRequest.setMetadata(Collections.emptyMap());
+
+        // 4. Call Service Logic
+        // We ignore the ApiResponse object's structure and just take the reply string
+        // to Ensure we strictly match the user's requested output format.
+        String replyText = honeyPotService.processRequest(serviceRequest).getReply();
+
+        // 5. Build Strict Response
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "success");
+        response.put("reply", replyText);
+
         return ResponseEntity.ok(response);
     }
-
 }
