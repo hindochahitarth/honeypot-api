@@ -1,6 +1,3 @@
-package com.guvi.honeypot.controller;
-import java.util.Map;
-
 import com.guvi.honeypot.model.ApiResponse;
 import com.guvi.honeypot.model.InputRequest;
 import com.guvi.honeypot.service.HoneyPotService;
@@ -19,30 +16,35 @@ public class HoneyPotController {
     }
 
     @PostMapping("/honeypot")
-public ResponseEntity<Map<String, Object>> handleHoneypot(
-        @RequestHeader(value = "x-api-key", required = false) String apiKey,
-        @RequestBody Map<String, Object> request) {
+    public ResponseEntity<ApiResponse> handleHoneypot(
+            @RequestHeader(value = "x-api-key", required = false) String apiKey,
+            @RequestBody(required = false) InputRequest request) { // required=false to handle empty body gracefully
+        
+        // 1. Security Check
+        if (!API_KEY.equals(apiKey)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
 
-    if (!API_KEY.equals(apiKey)) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        // 2. Validate Request Body
+        if (request == null) {
+            System.out.println("Error: Request body is null");
+            return ResponseEntity.badRequest().build();
+        }
+
+        // Allow missing history/metadata (initialize if null in service or here)
+        if (request.getSessionId() == null || request.getSessionId().isEmpty()) {
+             System.out.println("Error: sessionId is missing");
+             return ResponseEntity.badRequest().build();
+        }
+        
+        if (request.getMessage() == null || request.getMessage().getText() == null) {
+             System.out.println("Error: message or message text is missing");
+             return ResponseEntity.badRequest().build();
+        }
+
+        // 3. Process Request
+        ApiResponse response = honeyPotService.processRequest(request);
+        return ResponseEntity.ok(response);
     }
-
-    if (!request.containsKey("sessionId") || !request.containsKey("message")) {
-        return ResponseEntity.badRequest().build();
-    }
-
-    Map<String, Object> message =
-            (Map<String, Object>) request.get("message");
-
-    String reply =
-            "Oh no! Blocked? Please don't block me sir. I have my pension in this account. Please help me fix it immediately.";
-
-    return ResponseEntity.ok(
-            Map.of(
-                "status", "success",
-                "reply", reply
-            )
-    );
-}
 
 }
