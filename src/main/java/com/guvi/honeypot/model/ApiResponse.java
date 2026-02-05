@@ -10,5 +10,4 @@ import lombok.Data;
 public class ApiResponse {
     private String status;
     private String reply;
-    private Message message;
 }

@@ -70,13 +70,9 @@ public class HoneyPotService {
             responseText = "Hello, who is this? I don't recognize this number.";
         }
 
-        Message msgObj = new Message();
-        msgObj.setText(responseText);
-
         return ApiResponse.builder()
                 .status("success")
                 .reply(responseText)
-                .message(msgObj)
                 .build();
     }
 
