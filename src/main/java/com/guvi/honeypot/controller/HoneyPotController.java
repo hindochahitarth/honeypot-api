@@ -1,19 +1,34 @@
 package com.guvi.honeypot.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guvi.honeypot.model.ApiResponse;
+import com.guvi.honeypot.model.InputRequest;
+import com.guvi.honeypot.model.Message;
+import com.guvi.honeypot.service.HoneyPotService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
+@Slf4j
 public class HoneyPotController {
 
     private static final String API_KEY = "SECRET123";
 
+    @Autowired
+    private HoneyPotService honeyPotService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @PostMapping("/honeypot")
-    public ResponseEntity<Map<String, Object>> handleHoneypot(
+    public ResponseEntity<ApiResponse> handleHoneypot(
             @RequestHeader(value = "x-api-key", required = false) String apiKey,
             @RequestBody(required = false) Map<String, Object> requestBody) {
 
@@ -22,25 +37,33 @@ public class HoneyPotController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        // 2. Request Body Handling (Accept ANY valid JSON, do not validate)
-        // We do absolutely nothing with the body, as requested.
-        // Just ensuring we don't crash if it's null.
+        // 2. Request Body Handling (Accept ANY valid JSON)
         if (requestBody == null) {
             requestBody = new HashMap<>();
         }
 
-        // 3. Prepare Human-like Response
-        String replyText = "Hello! I have received your message. I am an AI agent designed to assist you.";
+        // Convert permissive Map to typed InputRequest for internal logic
+        InputRequest request;
+        try {
+            request = objectMapper.convertValue(requestBody, InputRequest.class);
+        } catch (IllegalArgumentException e) {
+            // If conversion fails, create a safe empty request to avoid 400
+            request = new InputRequest();
+            request.setSessionId(UUID.randomUUID().toString()); // safe fallback
+        }
 
-        // 4. Build Strict Response JSON
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "success");
-        response.put("reply", replyText);
+        // Ensure nested objects are not null to prevent NPEs in service
+        if (request.getMessage() == null) {
+            request.setMessage(new Message());
+        }
+        
+        // Ensure sessionId exists (critical for ConcurrentHashMap)
+        if (request.getSessionId() == null || request.getSessionId().isEmpty()) {
+            request.setSessionId(UUID.randomUUID().toString());
+        }
 
-        // Required nested message object
-        Map<String, String> messageNode = new HashMap<>();
-        messageNode.put("text", replyText);
-        response.put("message", messageNode);
+        // 3. Process Logic
+        ApiResponse response = honeyPotService.processRequest(request);
 
         return ResponseEntity.ok(response);
     }

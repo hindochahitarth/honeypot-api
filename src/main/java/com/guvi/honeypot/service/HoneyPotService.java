@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.*;
@@ -57,20 +58,25 @@ public class HoneyPotService {
             responseText = generatePersonaResponse(incomingText, session);
             session.getIntelligence().setTurnCount(session.getIntelligence().getTurnCount() + 1);
             
-            // Check if we should report
-            // Only report after some engagement or if specific info found
-            if (!session.getIntelligence().getUpiIds().isEmpty() 
+            // Check if we should report: only if high-value intel or engagement, AND not already sent
+            // Atomic check-and-set to ensure thread safety
+            if ((!session.getIntelligence().getUpiIds().isEmpty() 
                     || !session.getIntelligence().getBankAccounts().isEmpty()
-                    || session.getIntelligence().getTurnCount() >= 3) {
+                    || session.getIntelligence().getTurnCount() >= 3)
+                    && session.getCallbackSent().compareAndSet(false, true)) {
                 sendCallback(session);
             }
         } else {
             responseText = "Hello, who is this? I don't recognize this number.";
         }
 
+        Message msgObj = new Message();
+        msgObj.setText(responseText);
+
         return ApiResponse.builder()
                 .status("success")
                 .reply(responseText)
+                .message(msgObj)
                 .build();
     }
 
@@ -101,27 +107,49 @@ public class HoneyPotService {
     private String generatePersonaResponse(String text, SessionData session) {
         // Simple heuristic persona (Naive Indian User)
         if (text.contains("upi") || text.contains("pay") || text.contains("amount")) {
-            return "Sir, I am trying to pay 500 rupees but it fails. Google Pay says server error. I am not good with tech sir. What to do?";
-        } else if (text.contains("otp") || text.contains("code")) {
-            return "I got one SMS with code 5821. Is this the one? I am scared to share sir, is it safe?";
-        } else if (text.contains("link") || text.contains("click") || text.contains("website")) {
+            List<String> upiResponses = Arrays.asList(
+                "Sir, I am trying to pay but Google Pay says server error. I am not good with tech sir.",
+                "It is failing again and again. Is there any other way? My grandson usually does this.",
+                "I am entering the amount but it is stuck. Internet is very slow here in village.",
+                "Sir, I am scared to send money online. Is it safe? My pension is in this account."
+            );
+            return upiResponses.get(new Random().nextInt(upiResponses.size()));
+        } 
+        
+        else if (text.contains("otp") || text.contains("code") || text.contains("sms")) {
+            // ETHICAL FIX: Never reveal specific numbers. Be vague and reluctant.
+            List<String> otpResponses = Arrays.asList(
+                "I received an SMS with some numbers. I am not sure what it means. Is it safe to share?",
+                "One message came just now. It has some code. Should I give it to you?",
+                "I don't know sir, the bank told me never to share these codes. I am worried.",
+                "My phone just buzzed with a message. It says do not share. What should I do?"
+            );
+            return otpResponses.get(new Random().nextInt(otpResponses.size()));
+        } 
+        
+        else if (text.contains("link") || text.contains("click") || text.contains("website")) {
             return "I clicked the blue link you sent. It opened a page but now it is white screen. My internet is slow maybe?";
         } else if (text.contains("download") || text.contains("app") || text.contains("apk")) {
             return "My phone storage is full sir. Can I do it without downloading app? My grandson usually helps me with this.";
         } else if (text.contains("verify") || text.contains("kyc") || text.contains("blocked")) {
             return "Oh no! Blocked? Please don't block me sir. I have my pension in this account. Please help me fix it immediately.";
+        } else if (text.contains("card") || text.contains("password") || text.contains("pin")) {
+             return "Sir, I do not have my card with me right now. It is in the cupboard. Do I need it?";
         }
         
         List<String> fallbacks = Arrays.asList(
             "Okay sir, I am listening. Please guide me.",
             "I am very worried about this. Please help me.",
-            "Sorry sir, network is bad here in village. Can you repeat?",
-            "Yes sir, I want to resolve this quickly."
+            "Sorry sir, network is bad here. Can you repeat?",
+            "Yes sir, I want to resolve this quickly.",
+            "Hello? Are you still there sir?",
+            "I don't understand these technical things sir. Please help."
         );
         return fallbacks.get(new Random().nextInt(fallbacks.size()));
     }
 
     private void sendCallback(SessionData session) {
+        // No need to set trigger here, it's done atomically in caller
         new Thread(() -> { // Async callback
             try {
                 ExtractedIntelligence extracted = new ExtractedIntelligence();
